@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Logo Neon Particles — M -> particle assemble</title>
+<style>
+  html,body{height:100%;margin:0;background:#000;overflow:hidden;font-family:Inter,Arial}
+  #ui{
+    position:fixed;left:12px;top:12px;z-index:30;color:#dfeaff;
+    display:flex;gap:8px;align-items:center;backdrop-filter:blur(6px);
+  }
+  #ui button{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.04);color:#fff;padding:8px 10px;border-radius:8px;cursor:pointer}
+  #ui input{display:none}
+  #hint{position:fixed;right:12px;top:12px;color:#bcd7ff;font-size:13px;opacity:0.9}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<div id="ui">
+  <label style="cursor:pointer">
+    <input id="file" type="file" accept="image/*">
+    <button id="loadBtn">Load logo</button>
+  </label>
+  <button id="resetBtn">Restart</button>
+  <select id="quality" title="Performance/quality">
+    <option value="high">High</option>
+    <option value="medium" selected>Medium</option>
+    <option value="low">Low</option>
+  </select>
+</div>
+<div id="hint">Hover to push particles • Default logo fallback when no upload</div>
+<canvas id="c"></canvas>
+
+<script>
+/*
+  Logo Neon Particles
+  - Two-layer particle drawing: white core + purple glow
+  - Initial chaos -> assemble -> mouse repulsion -> return
+  - Supports loading image via file input or fallback filename `images.jpg`
+  Notes: adjust quality select if you see lags
+*/
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: true });
+let DPR = Math.max(1, window.devicePixelRatio || 1);
+
+function resizeCanvas(){
+  canvas.width = Math.floor(window.innerWidth * DPR);
+  canvas.height = Math.floor(window.innerHeight * DPR);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0); // work in CSS pixels
+}
+window.addEventListener('resize', () => {
+  DPR = Math.max(1, window.devicePixelRatio || 1);
+  resizeCanvas();
+});
+
+resizeCanvas();
+
+/* state */
+let particles = [];
+let logoImage = null;
+let assembling = false;
+let startTime = 0;
+let mode = 'assemble'; // 'assemble' or 'idle'
+let quality = document.getElementById('quality');
+const fileInput = document.getElementById('file');
+
+const mouse = {x: -9999, y: -9999, active: false};
+window.addEventListener('mousemove', e=>{
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+window.addEventListener('mouseleave', ()=>{ mouse.active = false; });
+
+document.getElementById('loadBtn').addEventListener('click', ()=> fileInput.click());
+fileInput.addEventListener('change', e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const url = URL.createObjectURL(f);
+  loadLogoFromURL(url);
+});
+document.getElementById('resetBtn').addEventListener('click', ()=> {
+  if(logoImage) buildParticlesFromImage(logoImage);
+});
+
+/* try to load local fallback images.jpg if exists (no error if not) */
+loadLogoFromURL('images.jpg').catch(()=>{/* ignore fallback failure */});
+
+/* utility: load image -> Promise */
+function loadImage(src){
+  return new Promise((res, rej)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=>res(img);
+    img.onerror = ()=>rej();
+    img.src = src;
+  });
+}
+
+function loadLogoFromURL(url){
+  return loadImage(url).then(img=>{
+    logoImage = img;
+    buildParticlesFromImage(img);
+  }).catch(()=>{ /* ignore */ });
+}
+
+/* Build particle grid from image.
+   Steps:
+   1. draw image to temp canvas scaled to fit desired logo size (targetFraction of screen height)
+   2. sample pixels with step (depends on quality)
+   3. store particles with home positions centered on screen
+*/
+function buildParticlesFromImage(img){
+  particles = [];
+  const targetFraction = 0.33; // logo height ~ 1/3 of screen height
+  const logoMaxH = Math.max(120, Math.floor(window.innerHeight * targetFraction));
+  const scale = logoMaxH / img.height;
+  const w = Math.round(img.width * scale);
+  const h = Math.round(img.height * scale);
+
+  const tmp = document.createElement('canvas');
+  tmp.width = w; tmp.height = h;
+  const tctx = tmp.getContext('2d');
+  // draw with smoothing off to preserve shape
+  tctx.imageSmoothingEnabled = true;
+  tctx.fillStyle = '#000';
+  tctx.fillRect(0,0,w,h);
+  tctx.drawImage(img, 0, 0, w, h);
+
+  // sample step by quality
+  let step = 3;
+  if(quality.value === 'low') step = 5;
+  if(quality.value === 'medium') step = 4;
+  if(quality.value === 'high') step = 2;
+
+  const id = tctx.getImageData(0,0,w,h).data;
+
+  // find bounding box of non-transparent pixels to center precisely
+  let minX = w, maxX = 0, minY = h, maxY = 0;
+  for(let y=0;y<h;y+=1){
+    for(let x=0;x<w;x+=1){
+      const i = (y*w + x)*4;
+      if(id[i+3] > 40){ // visible pixel
+        if(x < minX) minX = x;
+        if(x > maxX) maxX = x;
+        if(y < minY) minY = y;
+        if(y > maxY) maxY = y;
+      }
+    }
+  }
+  if(minX > maxX){ // empty
+    console.warn('Loaded image appears empty');
+    return;
+  }
+  const logoWidth = maxX - minX + 1;
+  const logoHeight = maxY - minY + 1;
+  const centerX = Math.floor(window.innerWidth / 2);
+  const centerY = Math.floor(window.innerHeight / 2);
+
+  // Build particles only inside bounding box for perf
+  for(let y = minY; y <= maxY; y += step){
+    for(let x = minX; x <= maxX; x += step){
+      const i = (y*w + x)*4;
+      const a = id[i+3];
+      if(a > 80){ // threshold to treat as part of logo
+        // color from image: we want white core and purple stroke.
+        // We'll use the image alpha / luminance to determine whether pixel is "edge" or "core"
+        const r = id[i], g = id[i+1], b = id[i+2];
+        const lumin = 0.2126*r + 0.7152*g + 0.0722*b;
+        // decide colors: if lumin high -> core (white); else if lower -> outline purple
+        const isCore = lumin > 180 || a > 220;
+        const coreColor = 'rgba(255,255,255,1)'; // white core
+        const outlineColor = 'rgba(160,32,240,0.95)'; // purple
+        const color = isCore ? coreColor : outlineColor;
+
+        // compute home position in screen coordinates: center the cropped logo
+        const homeX = centerX - Math.floor(logoWidth/2) + (x - minX);
+        const homeY = centerY - Math.floor(logoHeight/2) + (y - minY);
+
+        // particle starts at random position for chaotic appearance
+        particles.push({
+          x: Math.random() * window.innerWidth,
+          y: Math.random() * window.innerHeight,
+          homeX, homeY,
+          vx: (Math.random()-0.5)*6,
+          vy: (Math.random()-0.5)*6,
+          color,
+          core: isCore, // used for drawing sizes
+          born: Math.random()*1400
+        });
+      }
+    }
+  }
+
+  // limit particles if too many (safety)
+  const maxParticles = quality.value === 'high' ? 22000 : (quality.value === 'medium' ? 9000 : 4500);
+  if(particles.length > maxParticles){
+    // downsample randomly
+    shuffleArray(particles);
+    particles = particles.slice(0, maxParticles);
+  }
+
+  // start assembling
+  startTime = performance.now();
+  assembling = true;
+  mode = 'assemble';
+}
+
+/* small utility to shuffle array */
+function shuffleArray(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+}
+
+/* animation loop */
+let last = 0;
+function loop(ts){
+  const dt = ts - last; last = ts;
+  ctx.clearRect(0,0,canvas.width/DPR, canvas.height/DPR);
+
+  // fade background slightly to give glow persistence effect
+  // (draw semi-transparent rectangle for motion trails)
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(0,0,canvas.width/DPR, canvas.height/DPR);
+
+  // compute mouse force radius based on screen size
+  const baseRadius = Math.max(90, Math.min(220, Math.floor(window.innerWidth * 0.12)));
+  const radius = baseRadius * (quality.value==='low' ? 0.8 : 1);
+
+  // update and draw particles
+  for(let i=0;i<particles.length;i++){
+    const p = particles[i];
+
+    // spawn delay handling
+    if(performance.now() - startTime < p.born) {
+      // small drift while still 'hidden'
+      p.x += p.vx * 0.2;
+      p.y += p.vy * 0.2;
+      // draw faint if near spawn
+      if(Math.random() < 0.02) {
+        drawParticle(p, 0.08);
+      }
+      continue;
+    }
+
+    // mouse repulsion
+    if(mouse.active){
+      const dx = p.x - mouse.x;
+      const dy = p.y - mouse.y;
+      const d2 = dx*dx + dy*dy;
+      const r2 = radius*radius;
+      if(d2 < r2){
+        const d = Math.sqrt(d2) || 0.001;
+        const norm = (radius - d) / radius;
+        const strength =  (0.6 + norm*0.9) * (quality.value==='low' ? 0.6 : 1.0);
+        p.vx += (dx / d) * strength * 18 * (1/Math.max(1, particles.length/7000));
+        p.vy += (dy / d) * strength * 18 * (1/Math.max(1, particles.length/7000));
+      }
+    }
+
+    // attraction to home (assemble vs idle stronger)
+    const kHome = (mode === 'assemble') ? 0.02 : 0.035;
+    const ax = (p.homeX - p.x) * kHome;
+    const ay = (p.homeY - p.y) * kHome;
+    p.vx += ax;
+    p.vy += ay;
+
+    // damping
+    p.vx *= 0.86;
+    p.vy *= 0.86;
+
+    // integrate
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // draw particle
+    drawParticle(p, 1.0);
+  }
+
+  // after some time, switch to idle (stronger attract)
+  if(mode === 'assemble' && performance.now() - startTime > 2200){
+    mode = 'idle';
+  }
+
+  requestAnimationFrame(loop);
+}
+
+/* drawing: neon effect — draw outer glow (purple) then core (white) */
+function drawParticle(p, opacity){
+  const size = p.core ? (quality.value==='high' ? 3.2 : 2.8) : (quality.value==='high' ? 2.6 : 2.2);
+  // purple glow — bigger, soft
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = 'rgba(160,32,240,' + (0.18 * opacity) + ')';
+  ctx.shadowColor = 'rgba(160,32,240,0.9)';
+  ctx.shadowBlur = quality.value === 'low' ? 6 : 12;
+  ctx.fillRect(p.x - size*0.9, p.y - size*0.9, size*1.8, size*1.8);
+
+  // white core
+  ctx.shadowColor = 'rgba(255,255,255,0.9)';
+  ctx.shadowBlur = 2;
+  ctx.fillStyle = p.core ? 'rgba(255,255,255,' + (0.96*opacity) + ')' : 'rgba(230,220,255,' + (0.92*opacity) + ')';
+  ctx.fillRect(p.x - size*0.45, p.y - size*0.45, size*0.9, size*0.9);
+
+  ctx.shadowBlur = 0;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/* start animation */
+requestAnimationFrame(loop);
+
+/* when no image provided yet — create fallback simple M shape drawn on-the-fly
+   we still allow user to upload actual image via Load logo button */
+(function fallbackLogo(){
+  // try to load from provided global logo image variable if available
+  if(logoImage) return;
+  // create simple mock "M" logo to use instantly so page isn't empty
+  // draw into an offscreen canvas and feed to buildParticlesFromImage
+  const tmp = document.createElement('canvas');
+  const s = 480;
+  tmp.width = s; tmp.height = s;
+  const t = tmp.getContext('2d');
+  t.fillStyle = '#0000';
+  t.fillRect(0,0,s,s);
+  t.fillStyle = '#fff';
+  // draw a stylized M-ish shape similar to provided logo silhouette
+  t.beginPath();
+  t.moveTo(s*0.12, s*0.8);
+  t.lineTo(s*0.12, s*0.3);
+  t.lineTo(s*0.32, s*0.55);
+  t.lineTo(s*0.48, s*0.3);
+  t.lineTo(s*0.48, s*0.8);
+  t.lineTo(s*0.52, s*0.8);
+  t.lineTo(s*0.52, s*0.3);
+  t.lineTo(s*0.68, s*0.55);
+  t.lineTo(s*0.88, s*0.3);
+  t.lineTo(s*0.88, s*0.8);
+  t.closePath();
+  t.fill();
+
+  const img = new Image();
+  img.src = tmp.toDataURL();
+  img.onload = ()=> {
+    logoImage = img;
+    buildParticlesFromImage(img);
+  };
+})();
+
+/* allow user to upload and rebuild from url */
+function handleUserImageURL(url){
+  loadImage(url).then(img=>{
+    logoImage = img;
+    buildParticlesFromImage(img);
+  }).catch(()=>{ alert('Could not load image from URL'); });
+}
+
+/* quality change handler (rebuild with new step limits) */
+quality.addEventListener('change', ()=>{
+  if(logoImage) buildParticlesFromImage(logoImage);
+});
+
+/* optional: load local file named images.jpg if exists — non-blocking */
+/* already attempted at top */
+
+</script>
+</body>
+</html>

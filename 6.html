@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MELLSTROY.GAME – Neon Pixel Animation</title>
+<style>
+  body {
+    margin: 0;
+    background: black;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+const text = "MELLSTROY.GAME";
+const fontSize = 160;
+
+// Подготовка текста
+const tmpCanvas = document.createElement("canvas");
+const tmpCtx = tmpCanvas.getContext("2d");
+tmpCanvas.width = W;
+tmpCanvas.height = H;
+tmpCtx.font = `bold ${fontSize}px Arial`;
+tmpCtx.textAlign = "center";
+tmpCtx.textBaseline = "middle";
+tmpCtx.fillStyle = "#fff";
+tmpCtx.fillText(text, W / 2, H / 2);
+
+const imageData = tmpCtx.getImageData(0, 0, W, H);
+const particles = [];
+
+for (let y = 0; y < H; y += 6) {
+  for (let x = 0; x < W; x += 6) {
+    const i = (y * W + x) * 4;
+    if (imageData.data[i + 3] > 128) {
+      particles.push({
+        x: Math.random() * W, // старт из случайной точки
+        y: Math.random() * H,
+        homeX: x,
+        homeY: y,
+        vx: 0,
+        vy: 0,
+        born: Math.random() * 2000 // задержка появления
+      });
+    }
+  }
+}
+
+let mouse = { x: 0, y: 0, active: false };
+canvas.addEventListener("mousemove", e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener("mouseleave", () => (mouse.active = false));
+
+let startTime = null;
+function draw(timestamp) {
+  if (!startTime) startTime = timestamp;
+  const elapsed = timestamp - startTime;
+
+  ctx.clearRect(0, 0, W, H);
+  for (const p of particles) {
+    if (elapsed < p.born) continue; // появление по очереди
+
+    const dx = p.homeX - p.x;
+    const dy = p.homeY - p.y;
+    const distHome = Math.sqrt(dx * dx + dy * dy);
+
+    if (mouse.active) {
+      const mx = p.x - mouse.x;
+      const my = p.y - mouse.y;
+      const distMouse = Math.sqrt(mx * mx + my * my);
+      if (distMouse < 150) {
+        const force = (150 - distMouse) / 150;
+        const angle = Math.atan2(my, mx);
+        p.vx += Math.cos(angle) * force * 6;
+        p.vy += Math.sin(angle) * force * 6;
+      }
+    }
+
+    // Возврат к дому
+    p.vx += dx * 0.01;
+    p.vy += dy * 0.01;
+    p.vx *= 0.9;
+    p.vy *= 0.9;
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // Рисуем пиксель
+    const glow = 0.5 + Math.sin((p.x + p.y + elapsed * 0.01) * 0.02) * 0.5;
+    ctx.fillStyle = `rgba(180,0,255,${0.7 * glow})`;
+    ctx.shadowColor = "#c000ff";
+    ctx.shadowBlur = 10;
+    ctx.fillRect(p.x, p.y, 3, 3);
+  }
+
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

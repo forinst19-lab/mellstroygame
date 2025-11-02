@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MELLSTROY.GAME — Fire</title>
+<style>
+  :root{--bg:#000}
+  html,body{height:100%;margin:0;background:#000;display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,Arial;color:#fff}
+  .stage{width:100%;max-width:1200px;height:320px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  .word{
+    font-weight:900;font-size:64px;letter-spacing:4px;text-transform:uppercase;
+    color:#fff;mix-blend-mode:screen;
+    position:relative;z-index:2;padding:8px 14px;
+    filter:drop-shadow(0 12px 30px rgba(0,0,0,0.8));
+  }
+  /* base gradient then mask for burning */
+  .word .base{
+    background:linear-gradient(90deg,#ffd279,#ff6b6b 60%,#ff2d00 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  /* glowing ember layer */
+  .ember{
+    position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 90%, rgba(255,140,0,0.25) 0%, transparent 20%),
+               radial-gradient(ellipse at 30% 70%, rgba(255,60,0,0.12) 0%, transparent 12%);
+    filter:blur(18px);
+  }
+  /* flicker scale of the word */
+  @keyframes burn {
+    0%{transform:translateY(0) scale(1)}
+    20%{transform:translateY(-4px) scale(1.02)}
+    40%{transform:translateY(2px) scale(0.995)}
+    60%{transform:translateY(-2px) scale(1.01)}
+    100%{transform:translateY(0) scale(1)}
+  }
+  .word{animation:burn 3s ease-in-out infinite}
+
+  /* sparks canvas sits above background */
+  canvas{position:absolute;inset:0;z-index:3;pointer-events:none}
+
+  .hint{position:absolute;bottom:12px;color:#ffb3a5;font-size:13px;z-index:4}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="ember" aria-hidden="true"></div>
+    <div class="word" id="fireWord"><span class="base">MELLSTROY.GAME</span></div>
+    <canvas id="sparkCanvas"></canvas>
+    <div class="hint">Click (anywhere) — burst of sparks</div>
+  </div>
+
+<script>
+/* simple sparks on click */
+const canvas = document.getElementById('sparkCanvas');
+const ctx = canvas.getContext('2d');
+function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+resize(); addEventListener('resize', resize);
+
+let particles = [];
+function spawn(x,y){
+  for(let i=0;i<30;i++){
+    const a = Math.random()*Math.PI*2;
+    const s = 1 + Math.random()*5;
+    particles.push({
+      x, y,
+      vx: Math.cos(a)*s* (0.6+Math.random()),
+      vy: Math.sin(a)*s* (0.6+Math.random()),
+      life: 40 + Math.random()*40,
+      size: 1+Math.random()*3,
+      color: `hsl(${20 + Math.random()*30},100%,60%)`
+    });
+  }
+}
+
+document.addEventListener('click', e=>{
+  spawn(e.clientX, e.clientY);
+});
+
+function tick(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy += 0.12;
+    p.life--;
+    ctx.globalAlpha = Math.max(0, p.life/80);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+    ctx.fill();
+    if(p.life<=0) particles.splice(i,1);
+  }
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

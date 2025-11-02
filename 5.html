@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MELLSTROY.GAME — Glitch</title>
+<style>
+  :root{--bg:#000}
+  html,body{height:100%;margin:0;background:#000;display:flex;align-items:center;justify-content:center;font-family:monospace,Inter,system-ui,Arial;color:#fff}
+  .stage{width:100%;max-width:1200px;height:320px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  .wrap{position:relative;display:inline-block}
+  .base{
+    font-weight:900;font-size:64px;letter-spacing:6px;text-transform:uppercase;color:#cfefff;
+    position:relative;z-index:1;
+  }
+  /* layered copies for glitch */
+  .copy{
+    position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;
+    clip-path:polygon(0 0,100% 0,100% 100%,0 100%);
+    opacity:0.9;
+  }
+  .copy.c1{color:#ff7b7b;mix-blend-mode:screen;transform:translateX(-4px)}
+  .copy.c2{color:#7be7ff;mix-blend-mode:screen;transform:translateX(4px)}
+  /* animation slices */
+  @keyframes glitchSlice1{
+    0%{clip-path:polygon(0 0,100% 0,100% 48%,0 48%) ; transform:translateX(0)}
+    10%{clip-path:polygon(0 0,100% 0,100% 46%,0 46%) ; transform:translateX(-6px)}
+    20%{clip-path:polygon(0 0,100% 0,100% 48%,0 48%) ; transform:translateX(0)}
+    30%{clip-path:polygon(0 0,100% 0,100% 52%,0 52%) ; transform:translateX(8px)}
+    40%{clip-path:polygon(0 0,100% 0,100% 48%,0 48%) ; transform:translateX(0)}
+    100%{clip-path:polygon(0 0,100% 0,100% 48%,0 48%) ; transform:translateX(0)}
+  }
+  @keyframes glitchSlice2{
+    0%{clip-path:polygon(0 52%,100% 52%,100% 100%,0 100%);transform:translateX(0)}
+    12%{transform:translateX(6px)}
+    24%{transform:translateX(0)}
+    36%{transform:translateX(-8px)}
+    48%{transform:translateX(0)}
+    100%{transform:translateX(0)}
+  }
+  .copy.c1{animation:glitchSlice1 2.6s infinite linear}
+  .copy.c2{animation:glitchSlice2 2.2s infinite linear}
+  /* jitter effect */
+  @keyframes jitter {
+    0%{transform:translate(0,0) skewX(0)}
+    20%{transform:translate(-1px,1px) skewX(-1deg)}
+    40%{transform:translate(1px,-1px) skewX(1deg)}
+    60%{transform:translate(-2px,0) skewX(-2deg)}
+    80%{transform:translate(2px,1px) skewX(2deg)}
+    100%{transform:translate(0,0) skewX(0)}
+  }
+  .wrap:hover .base{animation:jitter 0.45s infinite}
+  .bar{
+    position:absolute;left:0;top:0;height:6px;width:100%;background:linear-gradient(90deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01));
+    mix-blend-mode:overlay;opacity:0.6;transform:translateY(0);
+    animation:barMove 4s linear infinite;
+  }
+  @keyframes barMove{
+    0%{transform:translateY(-50%)}50%{transform:translateY(150%)}100%{transform:translateY(-50%)}
+  }
+  .hint{position:absolute;bottom:12px;color:#9fbdf7;font-size:13px}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="wrap" aria-hidden="true">
+      <div class="copy c1">MELLSTROY.GAME</div>
+      <div class="copy c2">MELLSTROY.GAME</div>
+      <div class="base">MELLSTROY.GAME</div>
+      <div class="bar" style="top:18%"></div>
+      <div class="bar" style="top:58%;height:8px;opacity:0.35"></div>
+    </div>
+    <div class="hint">Hover — jitter; animation runs automatically</div>
+  </div>
+</body>
+</html>

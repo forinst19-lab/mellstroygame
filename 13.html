@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MELLSTROY GAME — explode → assemble → magnet</title>
+<style>
+  :root{
+    --bg:#000;
+    --white:#ffffff;
+    --purple:#d633ff;
+    --glow: rgba(182,32,255,0.95);
+  }
+  html,body{height:100%;margin:0;background:var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  /* initial DOM title (CSS animated) */
+  .stage{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100vh}
+  .title{font-family: 'Orbitron', system-ui, 'Segoe UI', Roboto, sans-serif; display:flex; gap:18px; pointer-events:none}
+  .part{display:flex;gap:6px;align-items:center}
+  .letter{opacity:0; transform:translateY(60px) scale(0.8); display:inline-block; font-weight:800; letter-spacing:6px}
+  .white{color:var(--white); font-size:78px; text-shadow:0 0 8px rgba(255,255,255,0.9),0 0 24px rgba(190,190,255,0.06)}
+  .purpleText{color:var(--purple); font-size:78px; text-shadow: 0 0 10px var(--glow), 0 0 30px rgba(214,51,255,0.15)}
+  @keyframes appear {
+    0%{opacity:0; transform:translateY(60px) scale(0.8); filter:blur(8px)}
+    60%{opacity:1; transform:translateY(-10px) scale(1.05); filter:blur(0)}
+    100%{opacity:1; transform:translateY(0) scale(1); filter:blur(0)}
+  }
+  .letter.appear { animation: appear 0.9s cubic-bezier(.2,.9,.3,1) forwards; }
+
+  /* canvas sits over DOM (we hide DOM once canvas animation starts) */
+  canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+  /* small UI */
+  #ui{position:fixed;left:12px;top:12px;z-index:50;color:#dfeaff;font-size:13px}
+  #ui button{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.03);color:#fff;padding:6px 8px;border-radius:8px;cursor:pointer}
+  #hint{position:fixed;right:14px;top:12px;color:#bcd7ff;font-size:13px;opacity:0.9;z-index:50}
+</style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="title" id="title">
+      <div class="part" id="p1"></div>
+      <div class="part" id="p2"></div>
+    </div>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div id="ui">
+    <button id="replay">Replay</button>
+  </div>
+  <div id="hint">Move mouse to repel particles after assemble</div>
+
+<script>
+/* Flow:
+  1) show CSS animated letters
+  2) after animation end -> capture text to offscreen canvas
+  3) generate particles from text pixels (sampling step depends on screen/quality)
+  4) explosion: particles fly out (initial outward impulse)
+  5) after explosionDuration -> switch to assemble mode (particles attracted to homes)
+  6) after assembled -> enable mouse magnet repulsion (continuous)
+  7) Replay button restarts sequence
+*/
+
+// Elements
+const p1 = document.getElementById('p1'), p2 = document.getElementById('p2');
+const title = document.getElementById('title');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha: true });
+const replayBtn = document.getElementById('replay');
+const stage = document.getElementById('stage');
+
+let DPR = Math.max(1, window.devicePixelRatio || 1);
+function resize(){
+  canvas.width = Math.floor(window.innerWidth * DPR);
+  canvas.height = Math.floor(window.innerHeight * DPR);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+resize();
+window.addEventListener('resize', ()=>{ DPR = Math.max(1, window.devicePixelRatio || 1); resize(); });
+
+// initial CSS letters
+const part1 = "MELLSTROY";
+const part2 = "GAME";
+function buildDOMLetters(){
+  p1.innerHTML = ''; p2.innerHTML = '';
+  for(let i=0;i<part1.length;i++){
+    const s = document.createElement('span');
+    s.className = 'letter white';
+    s.textContent = part1[i];
+    s.style.animationDelay = (i*0.12) + 's';
+    s.classList.add('appear');
+    p1.appendChild(s);
+  }
+  // small gap between words
+  const spacer = document.createElement('span'); spacer.style.width = '10px'; p2.appendChild(spacer);
+  for(let i=0;i<part2.length;i++){
+    const s = document.createElement('span');
+    s.className = 'letter purpleText';
+    s.textContent = part2[i];
+    s.style.animationDelay = ((part1.length*0.12) + 0.18 + i*0.12) + 's';
+    s.classList.add('appear');
+    p2.appendChild(s);
+  }
+}
+buildDOMLetters();
+
+// Canvas particle system
+let particles = [];
+let startTs = 0;
+let phase = 'dom'; // dom -> explode -> assemble -> idle
+let mouse = { x:-9999, y:-9999, active:false };
+
+// mouse events
+window.addEventListener('mousemove', e=>{ mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+window.addEventListener('mouseleave', ()=>{ mouse.active = false; });
+
+// replay
+replayBtn.addEventListener('click', ()=> startSequence());
+
+// generate particles from text drawn to temp canvas
+async function captureTextToImage(){
+  // Offscreen canvas same CSS size
+  const w = window.innerWidth, h = window.innerHeight;
+  const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
+  const tctx = tmp.getContext('2d');
+  // black background
+  tctx.fillStyle = '#000'; tctx.fillRect(0,0,w,h);
+
+  // compute positions where to draw text so it visually matches DOM
+  // use same font settings as DOM
+  const fontSize = 78; // matches CSS
+  tctx.textAlign = 'center';
+  tctx.textBaseline = 'middle';
+  tctx.font = `bold ${fontSize}px Orbitron, system-ui, Arial`;
+  // compute y positions for two lines centered similarly to DOM
+  // We'll draw both words on one baseline with spacing (as DOM did)
+  const centerX = Math.round(w/2);
+  // compute top Y to match vertical centering:
+  // we can draw first word slightly higher and second below
+  const totalHeight = fontSize * 1.05 * 2 + 12; // two lines stacked spacing
+  const startY = Math.round((h - totalHeight)/2 + fontSize/2);
+  const y1 = startY;
+  const y2 = startY + fontSize * 1.05; // second line offset
+
+  // draw first word (white)
+  tctx.fillStyle = '#ffffff';
+  tctx.fillText(part1, centerX, y1);
+
+  // draw second (purple)
+  tctx.fillStyle = '#d633ff';
+  tctx.fillText(part2, centerX, y2);
+
+  return tmp;
+}
+
+// build particles from image data
+function buildParticlesFromImage(imgCanvas){
+  particles = [];
+  const w = imgCanvas.width, h = imgCanvas.height;
+  const tctx = imgCanvas.getContext('2d');
+  const id = tctx.getImageData(0,0,w,h).data;
+
+  // set sampling step based on screen size (balance perf & density)
+  let step = 4; // default
+  if(window.innerWidth < 900) step = 5;
+  if(window.innerWidth > 2000) step = 3;
+
+  // determine bounding box to avoid sampling entire screen
+  let minX=w, maxX=0, minY=h, maxY=0;
+  for(let y=0;y<h;y+=step){
+    for(let x=0;x<w;x+=step){
+      const idx = (y*w + x)*4;
+      if(id[idx+3] > 80){
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+    }
+  }
+  if(minX>maxX){ console.warn('no visible text'); return; }
+
+  // center position (we'll use home positions relative to full screen)
+  const centerX = Math.round(window.innerWidth/2);
+  const centerY = Math.round(window.innerHeight/2);
+  const logoWidth = maxX - minX + 1;
+  const logoHeight = maxY - minY + 1;
+
+  // create particles
+  for(let y=minY; y<=maxY; y+=step){
+    for(let x=minX; x<=maxX; x+=step){
+      const idx = (y*w + x)*4;
+      const a = id[idx+3];
+      if(a > 80){
+        // read color drawn (white or purple)
+        const r = id[idx], g = id[idx+1], b = id[idx+2];
+        const lumin = 0.2126*r + 0.7152*g + 0.0722*b;
+        // treat bright as core white (but we already drew white/purple)
+        const coreColor = `rgba(${r},${g},${b},1)`;
+        const glowColor = '--'; // we will use uniform purple glow below
+        // home positions: center the cropped box
+        const homeX = centerX - Math.floor(logoWidth/2) + (x - minX);
+        const homeY = centerY - Math.floor(logoHeight/2) + (y - minY);
+        // Particle starting random position for explosion (random around screen)
+        particles.push({
+          x: Math.random()*window.innerWidth,
+          y: Math.random()*window.innerHeight,
+          vx: (Math.random()-0.5)*6,
+          vy: (Math.random()-0.5)*6,
+          homeX, homeY,
+          coreColor,
+          glowColor: 'rgba(166,32,255,0.95)',
+          born: Math.random()*300, // spawn delay for stagger
+          size: (lumin > 200) ? 3.2 : 2.4, // slight size diff
+        });
+      }
+    }
+  }
+
+  // limit total particles for perf
+  const maxAllowed = window.innerWidth > 1600 ? 14000 : (window.innerWidth > 1000 ? 8000 : 4200);
+  if(particles.length > maxAllowed){
+    // downsample randomly
+    shuffle(particles);
+    particles = particles.slice(0, maxAllowed);
+  }
+}
+
+// small shuffle
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// phases control
+let startTime = 0;
+function startSequence(){
+  // show DOM letters first (in case hidden)
+  title.style.opacity = 1;
+  // rebuild DOM letters and re-trigger CSS animation
+  buildDOMLetters();
+  // after CSS letters finish appearing, start capture + explosion
+  const totalLetters = part1.length + part2.length;
+  const lastDelay = (part1.length*0.12) + 0.18 + (part2.length-1)*0.12;
+  // schedule start of canvas explosion slightly after last appears
+  const delayMs = Math.round((lastDelay + 0.9) * 1000) + 150;
+  setTimeout(()=> {
+    beginCanvasSequence();
+  }, delayMs);
+}
+
+// begin canvas sequence: capture text, build particles, explode, then assemble
+async function beginCanvasSequence(){
+  // hide DOM title visually (so canvas shows); keep it for fallback
+  title.style.opacity = 0;
+  // capture
+  const img = await captureTextToImage();
+  buildParticlesFromImage(img);
+  // start timing
+  startTime = performance.now();
+  phase = 'explode';
+  // explosion impulse: give outward velocity from center point (of logo)
+  const center = getParticlesCenter();
+  // amplify impulse based on count
+  const factor = Math.max(1, 7000 / Math.max(1000, particles.length));
+  for(let p of particles){
+    const dx = p.x - center.x;
+    const dy = p.y - center.y;
+    const d = Math.sqrt(dx*dx + dy*dy) + 0.001;
+    const dirx = dx / d, diry = dy / d;
+    const impulse = (2 + Math.random()*2) * (1.0 * factor);
+    p.vx += dirx * impulse * (0.6 + Math.random()*0.8);
+    p.vy += diry * impulse * (0.6 + Math.random()*0.8);
+  }
+  // schedule switch to assemble after short explosion
+  setTimeout(()=>{ phase = 'assemble'; }, 800 + Math.random()*250);
+}
+
+// compute approximate center of particle homes
+function getParticlesCenter(){
+  if(particles.length===0) return {x:window.innerWidth/2, y:window.innerHeight/2};
+  let sx=0, sy=0;
+  for(let p of particles){ sx+=p.homeX; sy+=p.homeY; }
+  return { x: sx/particles.length, y: sy/particles.length };
+}
+
+// main animation loop
+let last = 0;
+function loop(ts){
+  if(!last) last = ts;
+  const dt = ts - last; last = ts;
+  // semi-clear with slight trail for neon persistence
+  ctx.clearRect(0,0, canvas.width/DPR, canvas.height/DPR);
+  ctx.fillStyle = 'rgba(0,0,0,0.14)';
+  ctx.fillRect(0,0, canvas.width/DPR, canvas.height/DPR);
+
+  // If no particles yet, just request next frame
+  if(!particles || particles.length===0){
+    requestAnimationFrame(loop); return;
+  }
+
+  // dynamics parameters
+  const now = performance.now();
+  const attraction = (phase === 'assemble') ? 0.035 : 0.02;
+  const damping = 0.86;
+  const mouseRadius = Math.max(80, Math.min(240, Math.floor(window.innerWidth*0.11)));
+
+  for(let i=0;i<particles.length;i++){
+    const p = particles[i];
+
+    // handle born delay (gradual spawn)
+    if(now - startTime < p.born){
+      // small idle drift
+      p.x += p.vx*0.06; p.y += p.vy*0.06;
+      continue;
+    }
+
+    // mouse repulsion only in idle/assemble phases after initial assemble has occurred
+    if(mouse.active && (phase === 'idle' || phase === 'assemble')){
+      const dx = p.x - mouse.x, dy = p.y - mouse.y;
+      const d2 = dx*dx + dy*dy;
+      const r2 = mouseRadius*mouseRadius;
+      if(d2 < r2){
+        const d = Math.sqrt(d2) || 0.001;
+        const norm = (mouseRadius - d) / mouseRadius;
+        const strength = (0.6 + norm*0.9) * 1.0;
+        // scale by particle count to keep stable
+        const scale = 18 * (1 / Math.max(1, particles.length/7000));
+        p.vx += (dx / d) * strength * scale;
+        p.vy += (dy / d) * strength * scale;
+      }
+    }
+
+    // attraction to home position (stronger when assembling/idle)
+    const ax = (p.homeX - p.x) * attraction;
+    const ay = (p.homeY - p.y) * attraction;
+    p.vx += ax; p.vy += ay;
+
+    // damping & integrate
+    p.vx *= damping; p.vy *= damping;
+    p.x += p.vx; p.y += p.vy;
+
+    // draw neon particle: first purple glow (soft), then core color (white or purple)
+    // glow
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(166,32,255,0.16)';
+    ctx.shadowColor = 'rgba(166,32,255,0.95)';
+    ctx.shadowBlur = 12;
+    const sGlow = p.size * 1.6;
+    ctx.fillRect(p.x - sGlow*0.5, p.y - sGlow*0.5, sGlow, sGlow);
+
+    // core
+    ctx.shadowBlur = 2;
+    ctx.fillStyle = p.coreColor || 'rgba(255,255,255,1)';
+    ctx.fillRect(p.x - p.size*0.45, p.y - p.size*0.45, p.size*0.9, p.size*0.9);
+
+    ctx.shadowBlur = 0;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // switch to idle if assembled (particles near home)
+  if(phase === 'assemble'){
+    // check approximate RMS error to decide switching to idle
+    let sum = 0, count = 0;
+    for(let p of particles){
+      const dx = p.homeX - p.x, dy = p.homeY - p.y;
+      sum += dx*dx + dy*dy; count++;
+    }
+    const rms = Math.sqrt(sum / Math.max(1,count));
+    if(rms < 2.5 || (now - startTime) > 4000) {
+      phase = 'idle';
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// start everything initially
+startSequence();
+requestAnimationFrame(loop);
+
+// helper to restart fully
+function resetAll(){
+  particles = [];
+  title.style.opacity = 1;
+  buildDOMLetters();
+  startSequence();
+}
+replayBtn.addEventListener('click', ()=> resetAll());
+
+// expose function to programmatically set logo image (not shown in UI here)
+window.loadLogoFromUrl = async function(url){
+  try{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = url;
+    await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; });
+    // convert to canvas and build
+    const tmp = document.createElement('canvas');
+    tmp.width = img.width; tmp.height = img.height;
+    tmp.getContext('2d').drawImage(img,0,0);
+    buildParticlesFromImage(tmp);
+  }catch(e){ console.warn('load fail', e); }
+};
+</script>
+</body>
+</html>

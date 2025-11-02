@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MELLSTROY.GAME Animation</title>
+<style>
+  body {
+    margin: 0;
+    height: 100vh;
+    background: radial-gradient(circle at center, #0a0a0a, #000);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .title {
+    font-family: "Orbitron", sans-serif;
+    font-size: 72px;
+    font-weight: 700;
+    color: #00ffff;
+    letter-spacing: 6px;
+    text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 40px #00ffff;
+    display: flex;
+  }
+
+  .letter {
+    opacity: 0;
+    transform: translateY(60px) scale(0.8);
+    animation: appear 1s ease forwards;
+  }
+
+  @keyframes appear {
+    0% {
+      opacity: 0;
+      transform: translateY(60px) scale(0.8);
+      filter: blur(10px);
+    }
+    60% {
+      opacity: 1;
+      transform: translateY(-10px) scale(1.05);
+      filter: blur(2px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+
+  /* свечение пульсирует */
+  @keyframes glow {
+    0%, 100% {
+      text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 40px #00ffff;
+    }
+    50% {
+      text-shadow: 0 0 20px #00f5ff, 0 0 60px #00f5ff, 0 0 80px #00f5ff;
+    }
+  }
+
+  .letter.glow {
+    animation: appear 1s ease forwards, glow 3s ease-in-out infinite;
+  }
+</style>
+</head>
+<body>
+  <div class="title" id="word"></div>
+
+  <script>
+    const text = "MELLSTROY.GAME";
+    const container = document.getElementById("word");
+
+    text.split("").forEach((char, i) => {
+      const span = document.createElement("span");
+      span.textContent = char;
+      span.className = "letter glow";
+      span.style.animationDelay = `${i * 0.15}s`;
+      container.appendChild(span);
+    });
+  </script>
+</body>
+</html>

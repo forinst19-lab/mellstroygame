@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MELLSTROY.GAME — Neon</title>
+<style>
+  :root{
+    --bg:#000;
+    --neon1:#00f5ff;
+    --neon2:#8b5cf6;
+    --accent:#7ef0ff;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#020204,#000);display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,Arial;color:#fff}
+  .wrap{display:flex;flex-direction:column;align-items:center;gap:18px}
+  .stage{width:100%;max-width:1200px;height:300px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  .neon{
+    font-weight:900;letter-spacing:8px;font-size:72px;text-transform:uppercase;
+    color:var(--neon1);
+    text-shadow:
+      0 0 8px rgba(0,245,255,0.6),
+      0 0 24px rgba(139,92,246,0.18),
+      0 10px 30px rgba(0,0,0,0.7);
+    transform:translateZ(0);
+  }
+  /* each letter appears with delay and pulse */
+  .neon .char{
+    display:inline-block;
+    opacity:0;
+    transform:translateY(30px) scale(0.9);
+    animation:neonIn 1s cubic-bezier(.2,.9,.3,1) forwards;
+  }
+  @keyframes neonIn{
+    0%{opacity:0; transform:translateY(30px) scale(0.9); filter:blur(8px)}
+    60%{opacity:1; transform:translateY(-6px) scale(1.03); filter:blur(0)}
+    100%{opacity:1; transform:translateY(0) scale(1); filter:blur(0)}
+  }
+  /* subtle continuous glow */
+  .neon::after{
+    content:"MELLSTROY.GAME";
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(1.01);
+    color:transparent;
+    -webkit-text-stroke:2px rgba(126,240,255,0.06);
+    filter:blur(10px) saturate(140%);
+    opacity:0.6;
+    mix-blend-mode:screen;
+    animation:glowPulse 3s ease-in-out infinite;
+    pointer-events:none;
+  }
+  @keyframes glowPulse{
+    0%{opacity:0.45; filter:blur(10px) brightness(0.9)}
+    50%{opacity:1; filter:blur(4px) brightness(1.15)}
+    100%{opacity:0.45; filter:blur(10px) brightness(0.9)}
+  }
+
+  /* hover intensify */
+  .stage:hover .neon{
+    text-shadow:
+      0 0 18px rgba(0,245,255,0.95),
+      0 0 40px rgba(139,92,246,0.45),
+      0 14px 40px rgba(0,0,0,0.7);
+    transform:translateZ(0);
+  }
+
+  /* small decorative tubes */
+  .tube{
+    position:absolute;inset:auto;left:6%;top:6%;width:16px;height:16px;border-radius:6px;
+    background:linear-gradient(180deg,var(--neon1),var(--neon2));box-shadow:0 6px 30px rgba(0,245,255,0.12);
+    opacity:0.7;transform:rotate(20deg);filter:blur(0.6px)
+  }
+  .tube.r{left:auto;right:6%;top:16%}
+
+  .hint{color:#9fbdf7;font-size:13px;opacity:0.9;text-align:center}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="stage" aria-hidden="true">
+      <div class="tube"></div>
+      <div class="tube r"></div>
+      <div class="neon" id="neonWord"></div>
+    </div>
+    <div class="hint">Hover — усилить свечения</div>
+  </div>
+
+<script>
+  const text = 'MELLSTROY.GAME';
+  const cont = document.getElementById('neonWord');
+  for(let i=0;i<text.length;i++){
+    const ch = document.createElement('span');
+    ch.className = 'char';
+    ch.textContent = text[i];
+    ch.style.animationDelay = (i * 0.08) + 's';
+    cont.appendChild(ch);
+  }
+</script>
+</body>
+</html>

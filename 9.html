@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MELLSTROY GAME - Pixel Neon</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+let width = canvas.width = window.innerWidth;
+let height = canvas.height = window.innerHeight;
+
+const pixelSize = 4;
+const mouse = { x: 0, y: 0 };
+const words = [
+  { text: "MELLSTROY", color: "#ffffff" },
+  { text: "GAME", color: "#a020f0" }
+];
+
+let particles = [];
+
+function createTextPixels() {
+  const tempCanvas = document.createElement("canvas");
+  const tempCtx = tempCanvas.getContext("2d");
+  tempCanvas.width = width;
+  tempCanvas.height = height;
+
+  tempCtx.font = "bold 150px Arial";
+  tempCtx.textAlign = "center";
+  tempCtx.fillStyle = "white";
+  
+  const totalHeight = 150 * words.length + 20 * (words.length - 1);
+  let startY = (height - totalHeight) / 2 + 120;
+
+  words.forEach(word => {
+    tempCtx.fillStyle = word.color;
+    tempCtx.fillText(word.text, width / 2, startY);
+    startY += 170;
+  });
+
+  const imgData = tempCtx.getImageData(0, 0, width, height);
+  particles = [];
+
+  for (let y = 0; y < height; y += pixelSize) {
+    for (let x = 0; x < width; x += pixelSize) {
+      const index = (y * width + x) * 4;
+      const alpha = imgData.data[index + 3];
+      if (alpha > 128) {
+        const color = `rgb(${imgData.data[index]}, ${imgData.data[index + 1]}, ${imgData.data[index + 2]})`;
+        particles.push({
+          x: x,
+          y: y,
+          homeX: x,
+          homeY: y,
+          color: color,
+          vx: 0,
+          vy: 0
+        });
+      }
+    }
+  }
+}
+
+function animate() {
+  ctx.clearRect(0, 0, width, height);
+  particles.forEach(p => {
+    const dx = mouse.x - p.x;
+    const dy = mouse.y - p.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const force = Math.max(0, 100 - dist) / 100;
+
+    if (dist < 100) {
+      const angle = Math.atan2(dy, dx);
+      p.vx -= Math.cos(angle) * force * 2;
+      p.vy -= Math.sin(angle) * force * 2;
+    }
+
+    // Возвращение пикселей на место
+    p.vx += (p.homeX - p.x) * 0.02;
+    p.vy += (p.homeY - p.y) * 0.02;
+
+    // Трение
+    p.vx *= 0.9;
+    p.vy *= 0.9;
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 10;
+    ctx.fillRect(p.x, p.y, pixelSize, pixelSize);
+  });
+
+  requestAnimationFrame(animate);
+}
+
+window.addEventListener("mousemove", e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+window.addEventListener("resize", () => {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+  createTextPixels();
+});
+
+createTextPixels();
+animate();
+</script>
+</body>
+</html>

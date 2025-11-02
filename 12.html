@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MELLSTROY GAME Animation</title>
+<style>
+  body {
+    margin: 0;
+    height: 100vh;
+    background: radial-gradient(circle at center, #0a0a0a, #000);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .title {
+    font-family: "Orbitron", sans-serif;
+    font-size: 78px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    display: flex;
+  }
+
+  .letter {
+    opacity: 0;
+    transform: translateY(60px) scale(0.8);
+    animation: appear 1s ease forwards;
+  }
+
+  @keyframes appear {
+    0% {
+      opacity: 0;
+      transform: translateY(60px) scale(0.8);
+      filter: blur(10px);
+    }
+    60% {
+      opacity: 1;
+      transform: translateY(-10px) scale(1.05);
+      filter: blur(2px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes glowWhite {
+    0%, 100% {
+      text-shadow: 0 0 10px #ffffff, 0 0 20px #ffffff, 0 0 40px #ffffff;
+    }
+    50% {
+      text-shadow: 0 0 20px #ffffff, 0 0 60px #ffffff, 0 0 90px #ffffff;
+    }
+  }
+
+  @keyframes glowPurple {
+    0%, 100% {
+      text-shadow: 0 0 10px #b300ff, 0 0 20px #b300ff, 0 0 40px #b300ff;
+    }
+    50% {
+      text-shadow: 0 0 20px #d633ff, 0 0 60px #d633ff, 0 0 90px #d633ff;
+    }
+  }
+
+  .white {
+    color: #fff;
+    animation: appear 1s ease forwards, glowWhite 3s ease-in-out infinite;
+  }
+
+  .purple {
+    color: #d633ff;
+    animation: appear 1s ease forwards, glowPurple 3s ease-in-out infinite;
+  }
+</style>
+</head>
+<body>
+  <div class="title" id="word"></div>
+
+  <script>
+    const part1 = "MELLSTROY";
+    const part2 = "GAME";
+    const container = document.getElementById("word");
+
+    const createLetters = (text, colorClass, startDelay = 0) => {
+      text.split("").forEach((char, i) => {
+        const span = document.createElement("span");
+        span.textContent = char;
+        span.className = `letter ${colorClass}`;
+        span.style.animationDelay = `${startDelay + i * 0.15}s`;
+        container.appendChild(span);
+      });
+    };
+
+    createLetters(part1, "white", 0);
+    const space = document.createElement("span");
+    space.textContent = " ";
+    container.appendChild(space);
+    createLetters(part2, "purple", part1.length * 0.15 + 0.3);
+  </script>
+</body>
+</html>
